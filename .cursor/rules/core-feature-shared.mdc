@@ -1,0 +1,234 @@
+---
+description: Arquitetura de pastas e diretrizes de dependências (core-shared-features)
+globs: src/**/*.ts, src/**/*.html
+alwaysApply: false
+---
+
+# Arquitetura de Pastas e Dependências: Core-Shared-Features
+
+Este documento define os padrões arquiteturais de organização de diretórios e as regras de dependência a serem seguidos no projeto Angular, baseado no modelo **core-shared-features**.
+
+---
+
+## 1. Estrutura de Pastas
+
+A aplicação deve organizar seus recursos dentro de `src/app/` em três pastas fundamentais:
+
+```text
+src/app/
+├── core/                  # Recursos globais e de inicialização (app.config)
+│   ├── auth/              # Autenticação, guards e gerenciamento de sessão
+│   ├── interceptors/      # Interceptors HTTP globais
+│   ├── tokens/            # InjectionTokens globais
+│   └── services/          # Serviços singleton do ciclo de vida da aplicação
+├── shared/                # Recursos compartilhados entre features
+│   ├── components/        # Componentes UI reutilizáveis (botões, modais, etc.)
+│   ├── directives/        # Diretivas utilitárias compartilhadas
+│   ├── pipes/             # Pipes utilitários de transformação
+│   ├── utils/             # Helpers e funções puras
+│   └── models/            # Interfaces e types comuns
+└── features/              # Módulos de domínio de negócio (carregados via lazy loading)
+    ├── auth/              # Feature de login, cadastro, recuperação de senha
+    ├── dashboard/         # Feature de dashboard
+    └── products/          # Feature de catálogo/produtos
+```
+
+---
+
+## 2. Definição e Responsabilidades das Pastas
+
+### 📁 `core/`
+- **Finalidade:** Centralizar recursos de nível raiz (singleton) e de infraestrutura da aplicação.
+- **Critério de inclusão:** Recursos que são **usados diretamente em `app.config.ts`** (ou no processo de inicialização do app) ou consumidos por **outros recursos dentro de `core/`**.
+- **Exemplos típicos:**
+  - Provedores e interceptors de requisições HTTP (`provideHttpClient`, interceptors de autenticação, logging ou erro).
+  - Serviços de inicialização (`APP_INITIALIZER`).
+  - Serviços de autenticação e sessão global (`AuthService`).
+  - Guards globais de proteção de rotas (`authGuard`).
+  - Tokens de injeção globais (`InjectionToken` para APIs do navegador, endpoints base, configurações de runtime).
+
+### 📁 `shared/`
+- **Finalidade:** Centralizar componentes, diretivas, pipes e utilitários genéricos e reutilizáveis.
+- **Critério de inclusão:** Recursos **compartilhados entre diferentes features** ou **usados internamente dentro de `shared/`**.
+- **Regra de design:** Elementos puramente agnósticos à lógica de negócio de features específicas. Um componente em `shared/` deve ser desacoplado e orientado a entradas e saídas (inputs/outputs).
+- **Exemplos típicos:**
+  - Componentes de UI genéricos (botão padrão, card, tabela reutilizável, modal de confirmação).
+  - Diretivas utilitárias (máscaras de input, auto-foco, debounce de cliques).
+  - Pipes comuns (formatação de moeda, datas, truncamento de texto).
+  - Modelos e tipos comuns compartilhados entre múltiplos contextos.
+  - Funções utilitárias puras e validadores de formulários genéricos.
+
+### 📁 `features/`
+- **Finalidade:** Encapsular as páginas e módulos de domínio de negócio da aplicação.
+- **Critério de inclusão:** Telas, páginas e funcionalidades específicas de uma área do sistema.
+- **Carregamento:** Todos os módulos de `features/` devem ser **obrigatoriamente carregados via Lazy Loading** através do roteador (`loadComponent` ou `loadChildren`).
+- **Exemplos típicos:**
+  - Páginas de fluxo do usuário (`features/dashboard`, `features/products`, `features/checkout`).
+  - Cada feature pode conter suas próprias rotas filhas (`*.routes.ts`), componentes locais (não compartilhados) e serviços específicos de estado da funcionalidade.
+
+---
+
+## 3. Matriz de Relacionamento e Dependências
+
+Para garantir um grafo de dependências acíclico, evitar acoplamento e permitir tree-shaking e divisão de código eficientes:
+
+| Camada de Origem | Pode depender de `core`? | Pode depender de `shared`? | Pode depender de `features`? |
+| :--------------- | :----------------------: | :------------------------: | :--------------------------: |
+| **`core/`**      | ✅ **SIM**               | ❌ **NÃO**                 | ❌ **NÃO**                   |
+| **`shared/`**    | ✅ **SIM**               | ✅ **SIM**                 | ❌ **NÃO**                   |
+| **`features/`**  | ✅ **SIM**               | ✅ **SIM**                 | ✅ **SIM**                   |
+
+### Síntese das Regras de Relacionamento:
+1. **`core` não pode depender de `shared` ou `features`**: O núcleo da aplicação deve ser completamente independente da interface compartilhada e das páginas de negócio.
+2. **`core` pode depender de `core`**: Serviços ou recursos do núcleo podem consumir uns aos outros livremente.
+3. **`shared` pode depender de `core`**: Elementos compartilhados podem consumir serviços, tokens e configurações globais presentes no core.
+4. **`shared` não pode depender de `features`**: Recursos compartilhados nunca devem ter conhecimento ou acoplamento com domínios específicos.
+5. **`features` pode depender de `shared` e `core`**: As funcionalidades de negócio consomem a infraestrutura do core e os blocos de construção do shared.
+6. **`features` podem depender de `features`**: Uma funcionalidade de negócio pode consumir componentes ou serviços de outra funcionalidade quando necessário.
+
+---
+
+## 4. Exemplos de Implementação
+
+### 4.1. Camada `core`
+
+#### ❌ Incorreto (Core importando de shared ou features)
+```typescript
+// src/app/core/interceptors/auth.interceptor.ts
+import { HttpInterceptorFn } from '@angular/common/http';
+import { AlertModalComponent } from '../../shared/components/alert-modal/alert-modal.component'; // ❌ PROIBIDO: core não pode depender de shared
+import { DashboardService } from '../../features/dashboard/dashboard.service'; // ❌ PROIBIDO: core não pode depender de features
+
+export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  // ...
+};
+```
+
+#### ✅ Correto (Core independente ou dependendo apenas de core)
+```typescript
+// src/app/core/interceptors/auth.interceptor.ts
+import { HttpInterceptorFn } from '@angular/common/http';
+import { inject } from '@angular/core';
+import { AuthService } from '../auth/auth.service'; // ✅ PERMITIDO: core dependendo de core
+
+export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  const authService = inject(AuthService);
+  const token = authService.token();
+
+  if (token) {
+    req = req.clone({
+      setHeaders: { Authorization: `Bearer ${token}` }
+    });
+  }
+  return next(req);
+};
+```
+
+---
+
+### 4.2. Camada `shared`
+
+#### ❌ Incorreto (Shared importando de features)
+```typescript
+// src/app/shared/components/product-card/product-card.component.ts
+import { Component } from '@angular/core';
+import { CheckoutService } from '../../../features/checkout/checkout.service'; // ❌ PROIBIDO: shared não pode depender de features
+
+@Component({
+  selector: 'app-product-card',
+  templateUrl: './product-card.component.html',
+  styleUrl: './product-card.component.css'
+})
+export class ProductCardComponent {
+  // Acoplou o componente genérico a uma feature de checkout específica
+}
+```
+
+#### ✅ Correto (Shared dependendo de core e shared)
+```typescript
+// src/app/shared/components/product-card/product-card.component.ts
+import { Component, input, output } from '@angular/core';
+import { LOCAL_STORAGE } from '../../../core/tokens/storage.tokens'; // ✅ PERMITIDO: shared pode depender de core
+import { PrimaryButtonComponent } from '../primary-button/primary-button.component'; // ✅ PERMITIDO: shared pode depender de shared
+
+@Component({
+  selector: 'app-product-card',
+  imports: [PrimaryButtonComponent],
+  templateUrl: './product-card.component.html',
+  styleUrl: './product-card.component.css'
+})
+export class ProductCardComponent {
+  readonly title = input.required<string>();
+  readonly price = input.required<number>();
+  readonly addToCart = output<void>();
+}
+```
+
+---
+
+### 4.3. Camada `features`
+
+#### ❌ Incorreto (Feature com carregamento eager em rotas)
+```typescript
+// src/app/app.routes.ts
+import { Routes } from '@angular/router';
+import { DashboardComponent } from './features/dashboard/dashboard.component'; // ❌ Incorreto: carregamento síncrono/eager
+
+export const routes: Routes = [
+  {
+    path: 'dashboard',
+    component: DashboardComponent, // Aumenta o tamanho inicial do bundle
+  },
+];
+```
+
+#### ✅ Correto (Feature com Lazy Loading)
+```typescript
+// src/app/app.routes.ts
+import { Routes } from '@angular/router';
+
+export const routes: Routes = [
+  {
+    path: 'dashboard',
+    loadComponent: () =>
+      import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent), // ✅ Lazy loading de componente
+  },
+  {
+    path: 'products',
+    loadChildren: () =>
+      import('./features/products/products.routes').then((m) => m.PRODUCTS_ROUTES), // ✅ Lazy loading de rotas
+  },
+];
+```
+
+#### ✅ Correto (Feature consumindo core, shared e outra feature)
+```typescript
+// src/app/features/products/pages/product-detail/product-detail.component.ts
+import { Component, inject } from '@angular/core';
+import { AuthService } from '../../../../core/auth/auth.service'; // ✅ PERMITIDO: features pode depender de core
+import { PrimaryButtonComponent } from '../../../../shared/components/primary-button/primary-button.component'; // ✅ PERMITIDO: features pode depender de shared
+import { CartBadgeComponent } from '../../../cart/components/cart-badge/cart-badge.component'; // ✅ PERMITIDO: features pode depender de features
+
+@Component({
+  selector: 'app-product-detail',
+  imports: [PrimaryButtonComponent, CartBadgeComponent],
+  templateUrl: './product-detail.component.html',
+  styleUrl: './product-detail.component.css'
+})
+export class ProductDetailComponent {
+  readonly authService = inject(AuthService);
+}
+```
+
+---
+
+## 5. Checklist de Conformidade
+
+Antes de concluir qualquer implementação ou refatoração, valide:
+
+- [ ] O recurso pertence a `core/`, `shared/` ou `features/` segundo sua responsabilidade?
+- [ ] Nenhum arquivo dentro de `core/` importa nada de `shared/` ou `features/`?
+- [ ] Nenhum arquivo dentro de `shared/` importa nada de `features/`?
+- [ ] Todas as rotas de `features/` são configuradas utilizando `loadComponent` ou `loadChildren` (lazy loading)?
+- [ ] Recursos declarados em `core/` são usados diretamente em `app.config.ts` ou apenas por outros recursos em `core/`?
+

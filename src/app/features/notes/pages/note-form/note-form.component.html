@@ -1,0 +1,53 @@
+<div class="card bg-base-100 shadow-sm border border-base-300 max-w-2xl mx-auto">
+  <div class="card-body">
+    <h1 class="card-title text-xl font-bold mb-4">
+      {{ isEditing() ? 'Editar Anotação' : 'Nova Anotação' }}
+    </h1>
+
+    @if (errorMessage()) {
+      <div class="alert alert-error mb-4 text-sm">
+        <span>{{ errorMessage() }}</span>
+      </div>
+    }
+
+    <form (submit)="onSubmit($event)" class="flex flex-col gap-4">
+      <div class="form-control">
+        <label class="label" for="note-title">
+          <span class="label-text font-medium">Título</span>
+        </label>
+        <input
+          id="note-title"
+          name="noteTitle"
+          type="text"
+          placeholder="Ex: Tarefas do dia"
+          class="input input-bordered w-full"
+          [(ngModel)]="title"
+          required
+        />
+      </div>
+
+      <div class="form-control">
+        <label class="label" for="note-content">
+          <span class="label-text font-medium">Conteúdo</span>
+        </label>
+        <textarea
+          id="note-content"
+          name="noteContent"
+          rows="6"
+          placeholder="Digite os detalhes da sua anotação..."
+          class="textarea textarea-bordered w-full"
+          [(ngModel)]="content"
+          required
+        ></textarea>
+      </div>
+
+      <div class="card-actions justify-end gap-2 mt-4">
+        <a routerLink="/notes" class="btn btn-ghost">Cancelar</a>
+        <button type="submit" class="btn btn-primary">
+          {{ isEditing() ? 'Atualizar' : 'Salvar' }}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+

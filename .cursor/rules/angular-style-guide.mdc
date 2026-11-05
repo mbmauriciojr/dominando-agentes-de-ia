@@ -1,0 +1,372 @@
+---
+description: Diretrizes de estilo e boas práticas para desenvolvimento com Angular
+globs: **/*.ts, **/*.html
+alwaysApply: false
+---
+
+# Angular Style Guide
+
+Este documento define os padrões arquiteturais, convenções de código e boas práticas a serem seguidos no projeto Angular.
+
+---
+
+## 1. Separação de Constantes, Interfaces e Types
+
+- **Regra:** Constantes devem ser definidas em arquivos separados de interfaces e types.
+- **Estrutura de Arquivos:**
+  - Interfaces e types devem ficar em arquivos dedicados (`*.models.ts` ou `*.types.ts`).
+  - Constantes e valores em tempo de execução devem ficar em arquivos dedicados (`*.constants.ts`).
+- **Motivação:** Tipos são apagados na compilação, enquanto constantes geram código em runtime. A separação evita acoplamento desnecessário, dependências circulares e facilita a manutenção e tree-shaking.
+
+### ❌ Incorreto (Misturando constantes e tipos)
+```typescript
+// user.models.ts
+export interface User {
+  id: string;
+  name: string;
+  role: 'admin' | 'user';
+}
+
+export const DEFAULT_USER: User = {
+  id: '',
+  name: 'Anônimo',
+  role: 'user',
+};
+
+export const MAX_RETRY_COUNT = 3;
+```
+
+### ✅ Correto (Arquivos separados)
+```typescript
+// user.models.ts
+export interface User {
+  id: string;
+  name: string;
+  role: 'admin' | 'user';
+}
+```
+
+```typescript
+// user.constants.ts
+import { User } from './user.models';
+
+export const DEFAULT_USER: User = {
+  id: '',
+  name: 'Anônimo',
+  role: 'user',
+};
+
+export const MAX_RETRY_COUNT = 3;
+```
+
+---
+
+## 2. Uma Entidade por Arquivo
+
+- **Regra:** Cada arquivo deve declarar e exportar apenas **uma entidade principal** (uma classe, uma interface, um enum, etc.).
+- **Nomenclatura:** O nome do arquivo deve refletir o nome da entidade contida nele (ex: `user.component.ts`, `user.service.ts`, `auth-token.interceptor.ts`).
+- **Motivação:** Melhora a legibilidade, simplifica a busca no projeto, facilita a modularização e reduz conflitos no controle de versão.
+
+### ❌ Incorreto (Múltiplas entidades no mesmo arquivo)
+```typescript
+// customer.service.ts
+export class CustomerValidator {
+  isValid(customer: any): boolean {
+    return !!customer.id;
+  }
+}
+
+export class CustomerService {
+  // lógica do serviço
+}
+```
+
+### ✅ Correto (Entidades isoladas)
+```typescript
+// customer-validator.util.ts
+export class CustomerValidator {
+  isValid(customer: any): boolean {
+    return !!customer.id;
+  }
+}
+```
+
+```typescript
+// customer.service.ts
+import { CustomerValidator } from './customer-validator.util';
+
+export class CustomerService {
+  // lógica do serviço
+}
+```
+
+---
+
+## 3. Template Externo para Componentes (Sem Template Inline)
+
+- **Regra:** Componentes devem possuir um arquivo de template próprio (`.html`). É terminantemente proibido criar componentes com template inline (`template: \`...\``).
+- **Regra adicional:** Estilos também devem estar em arquivo externo correspondente (`styleUrl: './componente.component.css'`).
+- **Motivação:** Separação clara de responsabilidades, melhor suporte a linting, formatação automática de HTML/CSS e facilidade na leitura de componentes maiores.
+
+### ❌ Incorreto (Template inline)
+```typescript
+// user-card.component.ts
+import { Component } from '@angular/core';
+
+@Component({
+  selector: 'app-user-card',
+  template: `
+    <div class="card">
+      <h2>Perfil do Usuário</h2>
+    </div>
+  `,
+})
+export class UserCardComponent {}
+```
+
+### ✅ Correto (Template externo)
+```typescript
+// user-card.component.ts
+import { Component } from '@angular/core';
+
+@Component({
+  selector: 'app-user-card',
+  templateUrl: './user-card.component.html',
+  styleUrl: './user-card.component.css',
+})
+export class UserCardComponent {}
+```
+
+---
+
+## 4. Uso de `@Service` ao invés de `@Injectable`
+
+- **Regra:** Utilize o decorator `@Service` importado de `@angular/core` para declarar serviços injetáveis, em vez de `@Injectable`.
+- **Importação:** `import { Service } from '@angular/core';`
+
+### ❌ Incorreto (Usando @Injectable)
+```typescript
+import { Injectable } from '@angular/core';
+
+@Injectable({
+  providedIn: 'root',
+})
+export class AuthService {}
+```
+
+### ✅ Correto (Usando @Service)
+```typescript
+import { Service } from '@angular/core';
+
+@Service({
+  providedIn: 'root',
+})
+export class AuthService {}
+```
+
+---
+
+## 5. Uso de `computed` ao invés de `signal.asReadonly`
+
+- **Regra:** Para expor sinais somente-leitura ou derivados a consumidores externos, utilize `computed` ao invés do método `.asReadonly()`.
+- **Motivação:** Padronização reativa, melhor previsibilidade do grafo de dependências reativas e proteção contra mutações indevidas.
+
+### ❌ Incorreto (Usando asReadonly)
+```typescript
+import { Service, signal } from '@angular/core';
+
+@Service({
+  providedIn: 'root',
+})
+export class CounterService {
+  readonly #count = signal(0);
+  readonly count = this.#count.asReadonly();
+}
+```
+
+### ✅ Correto (Usando computed)
+```typescript
+import { Service, computed, signal } from '@angular/core';
+
+@Service({
+  providedIn: 'root',
+})
+export class CounterService {
+  readonly #count = signal(0);
+  readonly count = computed(() => this.#count());
+}
+```
+
+---
+
+## 6. Abstração de Recursos Globais (`window`, `localStorage`) via `InjectionToken`
+
+- **Regra:** Nunca acesse APIs do navegador (`window`, `localStorage`, `sessionStorage`, `document`, etc.) diretamente nos serviços ou componentes. Sempre abstraia o acesso por meio de um `InjectionToken`.
+- **Motivação:** Garante compatibilidade com Server-Side Rendering (SSR / Angular Universal) onde objetos como `window` e `localStorage` são `undefined`, e possibilita testes unitários seguros através da injeção de mocks.
+
+### ❌ Incorreto (Acesso direto ao localStorage/window)
+```typescript
+import { Service } from '@angular/core';
+
+@Service({
+  providedIn: 'root',
+})
+export class StorageService {
+  getItem(key: string): string | null {
+    return localStorage.getItem(key); // Falha em SSR e dificulta testes
+  }
+}
+```
+
+### ✅ Correto (Abstração com InjectionToken)
+```typescript
+// storage.tokens.ts
+import { InjectionToken, inject } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+
+export const LOCAL_STORAGE = new InjectionToken<Storage>('LOCAL_STORAGE', {
+  providedIn: 'root',
+  factory: () => {
+    const document = inject(DOCUMENT);
+    return document.defaultView?.localStorage ?? ({} as Storage);
+  },
+});
+```
+
+```typescript
+// storage.service.ts
+import { Service, inject } from '@angular/core';
+import { LOCAL_STORAGE } from './storage.tokens';
+
+@Service({
+  providedIn: 'root',
+})
+export class StorageService {
+  readonly #storage = inject(LOCAL_STORAGE);
+
+  getItem(key: string): string | null {
+    return this.#storage.getItem(key);
+  }
+
+  setItem(key: string, value: string): void {
+    this.#storage.setItem(key, value);
+  }
+}
+```
+
+---
+
+## 7. Uso de `[class]` ao invés de `[ngClass]`
+
+- **Regra:** Utilize o property binding padrão `[class]` (com objetos, strings ou arrays) ou bindings de classe atômicos `[class.nome-da-classe]`, evitando o uso da diretiva legada `[ngClass]`.
+- **Motivação:** Menor overhead de runtime, dispensa a importação de `NgClass` nos componentes standalone e proporciona sintaxe nativa e mais limpa.
+
+### ❌ Incorreto (Usando [ngClass])
+```html
+<button [ngClass]="{ 'btn-primary': isPrimary(), 'btn-disabled': isDisabled() }">
+  Salvar
+</button>
+
+<div [ngClass]="themeClass()"></div>
+```
+
+### ✅ Correto (Usando [class])
+```html
+<!-- Objeto para classes condicionais -->
+<button [class]="{ 'btn-primary': isPrimary(), 'btn-disabled': isDisabled() }">
+  Salvar
+</button>
+
+<!-- Ou binding atômico de classe -->
+<button [class.btn-primary]="isPrimary()" [class.btn-disabled]="isDisabled()">
+  Salvar
+</button>
+
+<!-- String ou signal de classe -->
+<div [class]="themeClass()"></div>
+```
+
+---
+
+## 8. Built-in Control Flow (`@for`, `@if`, `@switch`) ao invés de Diretivas Estruturais
+
+- **Regra:** Utilize exclusivamente o novo fluxo de controle nativo do Angular (`@if`, `@for`, `@switch`) em vez das diretivas estruturais legadas (`*ngIf`, `*ngFor`, `*ngSwitch`).
+- **Obrigatoriedade no `@for`:** Sempre declare o `track` obrigatório e dê preferência ao uso do bloco `@empty` para tratar listas vazias.
+- **Motivação:** Melhor desempenho, checagem de tipos mais estrita, sintaxe intuitiva e sem necessidade de importar `CommonModule` ou diretivas legadas.
+
+### ❌ Incorreto (Diretivas estruturais legadas)
+```html
+<div *ngIf="isLoggedIn; else guestTemplate">
+  Bem-vindo de volta!
+</div>
+<ng-template #guestTemplate>
+  Faça login para continuar.
+</ng-template>
+
+<ul>
+  <li *ngFor="let item of items">{{ item.name }}</li>
+</ul>
+
+<div [ngSwitch]="status">
+  <p *ngSwitchCase="'active'">Ativo</p>
+  <p *ngSwitchCase="'inactive'">Inativo</p>
+  <p *ngSwitchDefault>Pendente</p>
+</div>
+```
+
+### ✅ Correto (Controle de fluxo nativo)
+```html
+@if (isLoggedIn()) {
+  <div>Bem-vindo de volta!</div>
+} @else {
+  <div>Faça login para continuar.</div>
+}
+
+<ul>
+  @for (item of items(); track item.id) {
+    <li>{{ item.name }}</li>
+  } @empty {
+    <li>Nenhum item encontrado.</li>
+  }
+</ul>
+
+@switch (status()) {
+  @case ('active') {
+    <p>Ativo</p>
+  }
+  @case ('inactive') {
+    <p>Inativo</p>
+  }
+  @default {
+    <p>Pendente</p>
+  }
+}
+```
+
+---
+
+## 9. Two-Way Binding com Signals: `[(ngModel)]="signal"`
+
+- **Regra:** Utilize a sintaxe direta de two-way binding `[(ngModel)]="meuSignal"` para associar signals a inputs de formulário.
+- **Proibido:** Não divida o binding manualmente em leitura de sinal `[ngModel]="meuSignal()"` e evento de atualização `(ngModelChange)="meuSignal.set($event)"`.
+- **Motivação:** Sintaxe muito mais concisa, idiomática e aderente ao modelo de reatividade moderno do Angular com signals.
+
+### ❌ Incorreto (Binding separado e manual)
+```html
+<input
+  type="text"
+  [ngModel]="searchQuery()"
+  (ngModelChange)="searchQuery.set($event)"
+  placeholder="Buscar..."
+/>
+```
+
+### ✅ Correto (Two-way binding direto com o Signal)
+```html
+<input
+  type="text"
+  [(ngModel)]="searchQuery"
+  placeholder="Buscar..."
+/>
+```
+
